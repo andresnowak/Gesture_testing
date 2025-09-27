@@ -5,6 +5,8 @@ from torch import nn
 import torch.nn.functional as F
 
 
+# From the paper https://arxiv.org/abs/1709.04875
+
 class TimeBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 3):
         super().__init__()
@@ -112,7 +114,7 @@ class STGCN(nn.Module):
 
         self.out = nn.Linear(
             (num_timesteps - 2 * 5) * 64, out_features
-        )  # because the time dimension gets reduced with the kernel_size = 3
+        )  # because the time dimension gets reduced with the kernel_size = 3 and we don't have padding, the size of the dimension gets reduced by kernel_size-1 each time
 
     def forward(self, x: torch.Tensor, A_hat: torch.Tensor) -> torch.Tensor:
         """
