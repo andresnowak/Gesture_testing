@@ -7,7 +7,7 @@ def unify_all_normalized_landmarks_to_shoulder_center(pose_results, hand_results
 
     IMPORTANT LIMITATIONS:
     - Coordinates are in normalized [0,1] space, NOT meters
-    - z-coordinates have different origins (but because they are relative we can still combine them with displacement vectors):
+    - z-coordinates have different origins (but because they are relative to something in their coordinate system we can still combine them with displacement vectors):
       * Pose z: relative to hips
       * Hand z: relative to wrist
       * Face z: relative to head center
