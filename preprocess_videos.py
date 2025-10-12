@@ -42,6 +42,32 @@ class VideoPreprocessor:
         self.face_landmarks = [234, 93, 132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 367, 288, 435, 361, 401, 323, 366, 454]
         self.hand_landmarks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
+    def calculate_visibility_score(self, landmark, margin: float = 0.1) -> float:
+        """
+        Returns visibility score [0,1] based on how far landmark is from boundaries.
+        Useful for detecting when hands/faces are leaving the frame.
+        
+        Args:
+            landmark: MediaPipe landmark object with x, y attributes (normalized [0,1])
+            margin: how close to edge before we consider it "leaving"
+        
+        Returns:
+            float: visibility score between 0.0 (outside/at edge) and 1.0 (well inside frame)
+        """
+        x, y = landmark.x, landmark.y
+
+        # If clearly outside frame
+        if x < 0 or x > 1 or y < 0 or y > 1:
+            return 0.0
+
+        # Calculate distance from nearest edge
+        dist_to_edge = min(x, 1-x, y, 1-y)
+
+        # Normalize: 0 at boundary, 1.0 at margin distance inward
+        visibility = min(dist_to_edge / margin, 1.0)
+
+        return visibility
+
     def unify_normalized_landmarks_to_shoulder_center(self, results) -> Optional[Dict]:
         """
         Transform all MediaPipe Holistic landmarks to shoulder-centered coordinates.
@@ -170,7 +196,8 @@ class VideoPreprocessor:
             face_landmarks = []
             for index, landmark in enumerate(results.face_landmarks.landmark):
                 if index in self.face_landmarks:
-                    face_landmarks.append([landmark.x, landmark.y, landmark.z, 1.0])
+                    visibility = self.calculate_visibility_score(landmark)
+                    face_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
             landmarks_data['face'] = np.array(face_landmarks)
         else:
             landmarks_data['face'] = np.zeros((len(self.face_landmarks), 4))
@@ -180,7 +207,8 @@ class VideoPreprocessor:
             left_hand_landmarks = []
             for index, landmark in enumerate(results.left_hand_landmarks.landmark):
                 if index in self.hand_landmarks:
-                    left_hand_landmarks.append([landmark.x, landmark.y, landmark.z, 1.0])
+                    visibility = self.calculate_visibility_score(landmark)
+                    left_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
             landmarks_data['left_hand'] = np.array(left_hand_landmarks)
         else:
             landmarks_data['left_hand'] = np.zeros((len(self.hand_landmarks), 4))
@@ -190,7 +218,8 @@ class VideoPreprocessor:
             right_hand_landmarks = []
             for index, landmark in enumerate(results.right_hand_landmarks.landmark):
                 if index in self.hand_landmarks:
-                    right_hand_landmarks.append([landmark.x, landmark.y, landmark.z, 1.0])
+                    visibility = self.calculate_visibility_score(landmark)
+                    right_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
             landmarks_data['right_hand'] = np.array(right_hand_landmarks)
         else:
             landmarks_data['right_hand'] = np.zeros((len(self.hand_landmarks), 4))
@@ -218,29 +247,35 @@ class VideoPreprocessor:
         else:
             unified_landmarks['pose'] = np.zeros((33, 4))
 
-        # Convert face to numpy array
-        if unified_data['face']:
+        # Convert face to numpy array (use original landmarks for visibility calculation)
+        if unified_data['face'] and results.face_landmarks:
             face_array = []
-            for lm in unified_data['face']:
-                face_array.append([lm['x'], lm['y'], lm['z'], 1.0])
+            for i, lm in enumerate(unified_data['face']):
+                # Calculate visibility from original normalized coordinates
+                visibility = self.calculate_visibility_score(results.face_landmarks.landmark[i])
+                face_array.append([lm['x'], lm['y'], lm['z'], visibility])
             unified_landmarks['face'] = np.array(face_array)
         else:
             unified_landmarks['face'] = np.zeros((468, 4))
 
-        # Convert left hand to numpy array
-        if unified_data['left_hand']:
+        # Convert left hand to numpy array (use original landmarks for visibility calculation)
+        if unified_data['left_hand'] and results.left_hand_landmarks:
             left_hand_array = []
-            for lm in unified_data['left_hand']:
-                left_hand_array.append([lm['x'], lm['y'], lm['z'], 1.0])
+            for i, lm in enumerate(unified_data['left_hand']):
+                # Calculate visibility from original normalized coordinates
+                visibility = self.calculate_visibility_score(results.left_hand_landmarks.landmark[i])
+                left_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
             unified_landmarks['left_hand'] = np.array(left_hand_array)
         else:
             unified_landmarks['left_hand'] = np.zeros((21, 4))
 
-        # Convert right hand to numpy array
-        if unified_data['right_hand']:
+        # Convert right hand to numpy array (use original landmarks for visibility calculation)
+        if unified_data['right_hand'] and results.right_hand_landmarks:
             right_hand_array = []
-            for lm in unified_data['right_hand']:
-                right_hand_array.append([lm['x'], lm['y'], lm['z'], 1.0])
+            for i, lm in enumerate(unified_data['right_hand']):
+                # Calculate visibility from original normalized coordinates
+                visibility = self.calculate_visibility_score(results.right_hand_landmarks.landmark[i])
+                right_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
             unified_landmarks['right_hand'] = np.array(right_hand_array)
         else:
             unified_landmarks['right_hand'] = np.zeros((21, 4))
