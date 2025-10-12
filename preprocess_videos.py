@@ -19,13 +19,19 @@ class CoordinateSystem(Enum):
 class VideoPreprocessor:
     def __init__(self,
                  min_detection_confidence: float = 0.5,
-                 min_tracking_confidence: float = 0.5):
+                 min_tracking_confidence: float = 0.5,
+                 include_pose: bool = True,
+                 include_face: bool = True,
+                 include_hands: bool = True):
         """
         Initialize MediaPipe Holistic model
 
         Args:
             min_detection_confidence: Minimum detection confidence
             min_tracking_confidence: Minimum tracking confidence
+            include_pose: Whether to include pose landmarks in extraction
+            include_face: Whether to include face landmarks in extraction
+            include_hands: Whether to include hand landmarks in extraction
         """
         self.mp_holistic = mp.solutions.holistic
         self.mp_drawing = mp.solutions.drawing_utils
@@ -37,6 +43,11 @@ class VideoPreprocessor:
             min_tracking_confidence=min_tracking_confidence
         )
 
+        # Body part selection flags
+        self.include_pose = include_pose
+        self.include_face = include_face
+        self.include_hands = include_hands
+
         # Define landmark indices for each component
         self.pose_landmarks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
         self.face_landmarks = [234, 93, 132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 367, 288, 435, 361, 401, 323, 366, 454]
@@ -46,11 +57,11 @@ class VideoPreprocessor:
         """
         Returns visibility score [0,1] based on how far landmark is from boundaries.
         Useful for detecting when hands/faces are leaving the frame.
-        
+
         Args:
             landmark: MediaPipe landmark object with x, y attributes (normalized [0,1])
             margin: how close to edge before we consider it "leaving"
-        
+
         Returns:
             float: visibility score between 0.0 (outside/at edge) and 1.0 (well inside frame)
         """
@@ -176,111 +187,136 @@ class VideoPreprocessor:
     def extract_landmarks(self, results) -> Dict[str, np.ndarray]:
         """
         Extract ORIGINAL landmarks from MediaPipe Holistic (normalized coordinates [0,1])
-        Returns dictionary with pose, face, left_hand, right_hand landmarks
+        Returns dictionary with pose, face, left_hand, right_hand landmarks (based on include flags)
         Each landmark has [x, y, z, visibility] format
         """
         landmarks_data = {}
 
         # Pose landmarks
-        if results.pose_landmarks:
-            pose_landmarks = []
-            for index, landmark in enumerate(results.pose_landmarks.landmark):
-                if index in self.pose_landmarks:
-                    pose_landmarks.append([landmark.x, landmark.y, landmark.z, landmark.visibility])
-            landmarks_data['pose'] = np.array(pose_landmarks)
-        else:
-            landmarks_data['pose'] = np.zeros((len(self.pose_landmarks), 4))
+        if self.include_pose:
+            if results.pose_landmarks:
+                pose_landmarks = []
+                for index, landmark in enumerate(results.pose_landmarks.landmark):
+                    if index in self.pose_landmarks:
+                        pose_landmarks.append([landmark.x, landmark.y, landmark.z, landmark.visibility])
+                landmarks_data['pose'] = np.array(pose_landmarks)
+            else:
+                landmarks_data['pose'] = np.zeros((len(self.pose_landmarks), 4))
 
         # Face landmarks
-        if results.face_landmarks:
-            face_landmarks = []
-            for index, landmark in enumerate(results.face_landmarks.landmark):
-                if index in self.face_landmarks:
-                    visibility = self.calculate_visibility_score(landmark)
-                    face_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
-            landmarks_data['face'] = np.array(face_landmarks)
-        else:
-            landmarks_data['face'] = np.zeros((len(self.face_landmarks), 4))
+        if self.include_face:
+            if results.face_landmarks:
+                face_landmarks = []
+                for index, landmark in enumerate(results.face_landmarks.landmark):
+                    if index in self.face_landmarks:
+                        visibility = self.calculate_visibility_score(landmark)
+                        face_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
+                landmarks_data['face'] = np.array(face_landmarks)
+            else:
+                landmarks_data['face'] = np.zeros((len(self.face_landmarks), 4))
 
-        # Left hand landmarks
-        if results.left_hand_landmarks:
-            left_hand_landmarks = []
-            for index, landmark in enumerate(results.left_hand_landmarks.landmark):
-                if index in self.hand_landmarks:
-                    visibility = self.calculate_visibility_score(landmark)
-                    left_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
-            landmarks_data['left_hand'] = np.array(left_hand_landmarks)
-        else:
-            landmarks_data['left_hand'] = np.zeros((len(self.hand_landmarks), 4))
+        # Hand landmarks
+        if self.include_hands:
+            # Left hand landmarks
+            if results.left_hand_landmarks:
+                left_hand_landmarks = []
+                for index, landmark in enumerate(results.left_hand_landmarks.landmark):
+                    if index in self.hand_landmarks:
+                        visibility = self.calculate_visibility_score(landmark)
+                        left_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
+                landmarks_data['left_hand'] = np.array(left_hand_landmarks)
+            else:
+                landmarks_data['left_hand'] = np.zeros((len(self.hand_landmarks), 4))
 
-        # Right hand landmarks
-        if results.right_hand_landmarks:
-            right_hand_landmarks = []
-            for index, landmark in enumerate(results.right_hand_landmarks.landmark):
-                if index in self.hand_landmarks:
-                    visibility = self.calculate_visibility_score(landmark)
-                    right_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
-            landmarks_data['right_hand'] = np.array(right_hand_landmarks)
-        else:
-            landmarks_data['right_hand'] = np.zeros((len(self.hand_landmarks), 4))
+            # Right hand landmarks
+            if results.right_hand_landmarks:
+                right_hand_landmarks = []
+                for index, landmark in enumerate(results.right_hand_landmarks.landmark):
+                    if index in self.hand_landmarks:
+                        visibility = self.calculate_visibility_score(landmark)
+                        right_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
+                landmarks_data['right_hand'] = np.array(right_hand_landmarks)
+            else:
+                landmarks_data['right_hand'] = np.zeros((len(self.hand_landmarks), 4))
 
         return landmarks_data
 
-    def extract_unified_landmarks(self, results) -> Optional[Dict[str, np.ndarray]]:
+    def extract_unified_landmarks(self, results) -> Optional[np.ndarray]:
         """
         Extract SHOULDER-CENTERED unified landmarks from MediaPipe Holistic
-        Returns dictionary with pose, face, left_hand, right_hand in shoulder-centered coordinates
+        Returns a single concatenated array of SELECTED landmarks in shoulder-centered coordinates
+        Shape depends on which body parts are included (based on include flags)
+        Each landmark has [x, y, z, visibility] format
         """
         unified_data = self.unify_normalized_landmarks_to_shoulder_center(results)
 
         if unified_data is None:
             return None
 
-        unified_landmarks = {}
+        landmarks_to_concatenate = []
 
-        # Convert pose to numpy array
-        if unified_data['pose']:
-            pose_array = []
-            for lm in unified_data['pose']:
-                pose_array.append([lm['x'], lm['y'], lm['z'], lm.get('visibility', 1.0)])
-            unified_landmarks['pose'] = np.array(pose_array)
+        # Convert pose to numpy array - FILTER selected landmarks only
+        if self.include_pose:
+            if unified_data['pose']:
+                pose_array = []
+                for idx in self.pose_landmarks:
+                    lm = unified_data['pose'][idx]
+                    pose_array.append([lm['x'], lm['y'], lm['z'], lm.get('visibility', 1.0)])
+                pose_landmarks = np.array(pose_array)
+            else:
+                pose_landmarks = np.zeros((len(self.pose_landmarks), 4))
+            landmarks_to_concatenate.append(pose_landmarks)
+
+        # Convert face to numpy array - FILTER selected landmarks only
+        if self.include_face:
+            if unified_data['face'] and results.face_landmarks:
+                face_array = []
+                for idx in self.face_landmarks:
+                    lm = unified_data['face'][idx]
+                    # Calculate visibility from original normalized coordinates
+                    visibility = self.calculate_visibility_score(results.face_landmarks.landmark[idx])
+                    face_array.append([lm['x'], lm['y'], lm['z'], visibility])
+                face_landmarks = np.array(face_array)
+            else:
+                face_landmarks = np.zeros((len(self.face_landmarks), 4))
+            landmarks_to_concatenate.append(face_landmarks)
+
+        # Convert hands to numpy arrays - FILTER selected landmarks only
+        if self.include_hands:
+            # Left hand
+            if unified_data['left_hand'] and results.left_hand_landmarks:
+                left_hand_array = []
+                for idx in self.hand_landmarks:
+                    lm = unified_data['left_hand'][idx]
+                    # Calculate visibility from original normalized coordinates
+                    visibility = self.calculate_visibility_score(results.left_hand_landmarks.landmark[idx])
+                    left_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
+                left_hand_landmarks = np.array(left_hand_array)
+            else:
+                left_hand_landmarks = np.zeros((len(self.hand_landmarks), 4))
+            landmarks_to_concatenate.append(left_hand_landmarks)
+
+            # Right hand
+            if unified_data['right_hand'] and results.right_hand_landmarks:
+                right_hand_array = []
+                for idx in self.hand_landmarks:
+                    lm = unified_data['right_hand'][idx]
+                    # Calculate visibility from original normalized coordinates
+                    visibility = self.calculate_visibility_score(results.right_hand_landmarks.landmark[idx])
+                    right_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
+                right_hand_landmarks = np.array(right_hand_array)
+            else:
+                right_hand_landmarks = np.zeros((len(self.hand_landmarks), 4))
+            landmarks_to_concatenate.append(right_hand_landmarks)
+
+        # Concatenate selected landmarks into a single unified graph
+        if landmarks_to_concatenate:
+            unified_graph = np.concatenate(landmarks_to_concatenate, axis=0)
         else:
-            unified_landmarks['pose'] = np.zeros((33, 4))
+            # If no body parts selected, return empty array
+            unified_graph = np.zeros((0, 4))
 
-        # Convert face to numpy array (use original landmarks for visibility calculation)
-        if unified_data['face'] and results.face_landmarks:
-            face_array = []
-            for i, lm in enumerate(unified_data['face']):
-                # Calculate visibility from original normalized coordinates
-                visibility = self.calculate_visibility_score(results.face_landmarks.landmark[i])
-                face_array.append([lm['x'], lm['y'], lm['z'], visibility])
-            unified_landmarks['face'] = np.array(face_array)
-        else:
-            unified_landmarks['face'] = np.zeros((468, 4))
-
-        # Convert left hand to numpy array (use original landmarks for visibility calculation)
-        if unified_data['left_hand'] and results.left_hand_landmarks:
-            left_hand_array = []
-            for i, lm in enumerate(unified_data['left_hand']):
-                # Calculate visibility from original normalized coordinates
-                visibility = self.calculate_visibility_score(results.left_hand_landmarks.landmark[i])
-                left_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
-            unified_landmarks['left_hand'] = np.array(left_hand_array)
-        else:
-            unified_landmarks['left_hand'] = np.zeros((21, 4))
-
-        # Convert right hand to numpy array (use original landmarks for visibility calculation)
-        if unified_data['right_hand'] and results.right_hand_landmarks:
-            right_hand_array = []
-            for i, lm in enumerate(unified_data['right_hand']):
-                # Calculate visibility from original normalized coordinates
-                visibility = self.calculate_visibility_score(results.right_hand_landmarks.landmark[i])
-                right_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
-            unified_landmarks['right_hand'] = np.array(right_hand_array)
-        else:
-            unified_landmarks['right_hand'] = np.zeros((21, 4))
-
-        return unified_landmarks
+        return unified_graph
 
     def draw_landmarks_on_frame(self, frame: np.ndarray, results) -> np.ndarray:
         """
@@ -453,7 +489,7 @@ class VideoPreprocessor:
         }
 
     def save_landmarks_dataset(self,
-                               landmarks_data: List[Dict],
+                               landmarks_data: List,
                                video_name: str,
                                output_dir: str,
                                coordinate_system: str = "original"):
@@ -462,75 +498,175 @@ class VideoPreprocessor:
 
         Args:
             landmarks_data: List of frame landmarks
+                - For "original": List of Dict with separate pose, face, left_hand, right_hand
+                - For "shoulder_centered": List of np.ndarray with unified graph
             video_name: Name of the video
             output_dir: Output directory
             coordinate_system: "original" or "shoulder_centered"
         """
         num_frames = len(landmarks_data)
+        suffix = f"_{coordinate_system}" if coordinate_system != "original" else ""
 
-        # Determine array sizes based on coordinate system
         if coordinate_system == "original":
+            # Handle separate graphs (original format)
             pose_size = len(self.pose_landmarks)
             face_size = len(self.face_landmarks)
             hand_size = len(self.hand_landmarks)
-        else:  # shoulder_centered
-            pose_size = 33
-            face_size = 468
-            hand_size = 21
 
-        # Initialize arrays for each component
-        pose_data = []
-        face_data = []
-        left_hand_data = []
-        right_hand_data = []
-
-        # Fill arrays
-        for frame_landmarks in landmarks_data:
-            if frame_landmarks is not None:
-                pose_data.append(frame_landmarks.get('pose', np.zeros((pose_size, 4))))
-                face_data.append(frame_landmarks.get('face', np.zeros((face_size, 4))))
-                left_hand_data.append(frame_landmarks.get('left_hand', np.zeros((hand_size, 4))))
-                right_hand_data.append(frame_landmarks.get('right_hand', np.zeros((hand_size, 4))))
-            else:
-                pose_data.append(np.zeros((pose_size, 4)))
-                face_data.append(np.zeros((face_size, 4)))
-                left_hand_data.append(np.zeros((hand_size, 4)))
-                right_hand_data.append(np.zeros((hand_size, 4)))
-
-        pose_data = np.array(pose_data)
-        face_data = np.array(face_data)
-        left_hand_data = np.array(left_hand_data)
-        right_hand_data = np.array(right_hand_data)
-
-        # Create filename suffix
-        suffix = f"_{coordinate_system}" if coordinate_system != "original" else ""
-
-        # Save as numpy arrays
-        np.savez_compressed(
-            os.path.join(output_dir, f"{video_name}{suffix}_landmarks.npz"),
-            pose=pose_data,
-            face=face_data,
-            left_hand=left_hand_data,
-            right_hand=right_hand_data
-        )
-
-        # Save as pickle
-        dataset = {
-            'pose': pose_data,
-            'face': face_data,
-            'left_hand': left_hand_data,
-            'right_hand': right_hand_data,
-            'metadata': {
+            # Initialize data structures
+            data_to_save = {}
+            npz_arrays = {}
+            metadata = {
                 'num_frames': num_frames,
                 'coordinate_system': coordinate_system,
-                'pose_landmarks': self.pose_landmarks if coordinate_system == "original" else list(range(33)),
-                'face_landmarks': self.face_landmarks if coordinate_system == "original" else list(range(468)),
-                'hand_landmarks': self.hand_landmarks if coordinate_system == "original" else list(range(21)),
+                'included_parts': []
             }
-        }
 
-        with open(os.path.join(output_dir, f"{video_name}{suffix}_dataset.pkl"), 'wb') as f:
-            pickle.dump(dataset, f)
+            # Process each body part if included
+            if self.include_pose:
+                pose_data = []
+                for frame_landmarks in landmarks_data:
+                    if frame_landmarks is not None and 'pose' in frame_landmarks:
+                        pose_data.append(frame_landmarks['pose'])
+                    else:
+                        pose_data.append(np.zeros((pose_size, 4)))
+                pose_data = np.array(pose_data)
+                data_to_save['pose'] = pose_data
+                npz_arrays['pose'] = pose_data
+                metadata['pose_landmarks'] = self.pose_landmarks
+                metadata['included_parts'].append('pose')
+
+            if self.include_face:
+                face_data = []
+                for frame_landmarks in landmarks_data:
+                    if frame_landmarks is not None and 'face' in frame_landmarks:
+                        face_data.append(frame_landmarks['face'])
+                    else:
+                        face_data.append(np.zeros((face_size, 4)))
+                face_data = np.array(face_data)
+                data_to_save['face'] = face_data
+                npz_arrays['face'] = face_data
+                metadata['face_landmarks'] = self.face_landmarks
+                metadata['included_parts'].append('face')
+
+            if self.include_hands:
+                left_hand_data = []
+                right_hand_data = []
+                for frame_landmarks in landmarks_data:
+                    if frame_landmarks is not None:
+                        left_hand_data.append(frame_landmarks.get('left_hand', np.zeros((hand_size, 4))))
+                        right_hand_data.append(frame_landmarks.get('right_hand', np.zeros((hand_size, 4))))
+                    else:
+                        left_hand_data.append(np.zeros((hand_size, 4)))
+                        right_hand_data.append(np.zeros((hand_size, 4)))
+                left_hand_data = np.array(left_hand_data)
+                right_hand_data = np.array(right_hand_data)
+                data_to_save['left_hand'] = left_hand_data
+                data_to_save['right_hand'] = right_hand_data
+                npz_arrays['left_hand'] = left_hand_data
+                npz_arrays['right_hand'] = right_hand_data
+                metadata['hand_landmarks'] = self.hand_landmarks
+                metadata['included_parts'].extend(['left_hand', 'right_hand'])
+
+            # Save as numpy arrays
+            np.savez_compressed(
+                os.path.join(output_dir, f"{video_name}{suffix}_landmarks.npz"),
+                **npz_arrays
+            )
+
+            # Save as pickle
+            dataset = {**data_to_save, 'metadata': metadata}
+            with open(os.path.join(output_dir, f"{video_name}{suffix}_dataset.pkl"), 'wb') as f:
+                pickle.dump(dataset, f)
+
+        else:  # shoulder_centered - unified graph
+            # Handle unified graph format
+            unified_data = []
+
+            # Calculate total landmarks from selected body parts
+            total_landmarks = 0
+            if self.include_pose:
+                total_landmarks += len(self.pose_landmarks)
+            if self.include_face:
+                total_landmarks += len(self.face_landmarks)
+            if self.include_hands:
+                total_landmarks += 2 * len(self.hand_landmarks)  # left + right
+
+            for frame_landmarks in landmarks_data:
+                if frame_landmarks is not None:
+                    unified_data.append(frame_landmarks)
+                else:
+                    # If no landmarks, create zero array with correct size
+                    unified_data.append(np.zeros((total_landmarks, 4)))
+
+            unified_data = np.array(unified_data)  # Shape: (num_frames, total_landmarks, 4)
+
+            # Save as numpy array (unified graph)
+            np.savez_compressed(
+                os.path.join(output_dir, f"{video_name}{suffix}_landmarks.npz"),
+                unified_graph=unified_data
+            )
+
+            # Build landmark structure dynamically based on included parts
+            landmark_structure = {}
+            included_parts = []
+            current_idx = 0
+
+            if self.include_pose:
+                pose_count = len(self.pose_landmarks)
+                landmark_structure['pose'] = {
+                    'start': current_idx,
+                    'end': current_idx + pose_count,
+                    'count': pose_count,
+                    'indices': self.pose_landmarks
+                }
+                current_idx += pose_count
+                included_parts.append('pose')
+
+            if self.include_face:
+                face_count = len(self.face_landmarks)
+                landmark_structure['face'] = {
+                    'start': current_idx,
+                    'end': current_idx + face_count,
+                    'count': face_count,
+                    'indices': self.face_landmarks
+                }
+                current_idx += face_count
+                included_parts.append('face')
+
+            if self.include_hands:
+                hand_count = len(self.hand_landmarks)
+                landmark_structure['left_hand'] = {
+                    'start': current_idx,
+                    'end': current_idx + hand_count,
+                    'count': hand_count,
+                    'indices': self.hand_landmarks
+                }
+                current_idx += hand_count
+
+                landmark_structure['right_hand'] = {
+                    'start': current_idx,
+                    'end': current_idx + hand_count,
+                    'count': hand_count,
+                    'indices': self.hand_landmarks
+                }
+                current_idx += hand_count
+                included_parts.extend(['left_hand', 'right_hand'])
+
+            # Save as pickle
+            dataset = {
+                'unified_graph': unified_data,
+                'metadata': {
+                    'num_frames': num_frames,
+                    'coordinate_system': coordinate_system,
+                    'total_landmarks': total_landmarks,
+                    'included_parts': included_parts,
+                    'landmark_structure': landmark_structure
+                }
+            }
+
+            with open(os.path.join(output_dir, f"{video_name}{suffix}_dataset.pkl"), 'wb') as f:
+                pickle.dump(dataset, f)
 
         print(f"Dataset ({coordinate_system}) saved for {video_name} with {num_frames} frames")
 
@@ -584,10 +720,32 @@ if __name__ == "__main__":
     output_folder = "data/asl_info"  # Change this to your output folder path
 
     # Create preprocessor instance
+    # Example 1: Include all body parts (default)
     preprocessor = VideoPreprocessor(
         min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
+        min_tracking_confidence=0.5,
+        include_pose=True,
+        include_face=True,
+        include_hands=True
     )
+
+    # Example 2: Only hands and face (no pose)
+    # preprocessor = VideoPreprocessor(
+    #     min_detection_confidence=0.5,
+    #     min_tracking_confidence=0.5,
+    #     include_pose=False,
+    #     include_face=True,
+    #     include_hands=True
+    # )
+
+    # Example 3: Only hands
+    # preprocessor = VideoPreprocessor(
+    #     min_detection_confidence=0.5,
+    #     min_tracking_confidence=0.5,
+    #     include_pose=False,
+    #     include_face=False,
+    #     include_hands=True
+    # )
 
     # Process all videos in the folder
     preprocessor.process_folder(input_folder, output_folder, coordinate_systems=[CoordinateSystem.SHOULDER_CENTERED])
