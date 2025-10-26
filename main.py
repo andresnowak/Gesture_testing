@@ -1,6 +1,6 @@
 import torch
 
-from stgcn import STGCN
+from src.stgcn import STGCN
 
 
 if __name__ == "__main__":
