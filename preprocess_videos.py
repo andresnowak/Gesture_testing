@@ -49,8 +49,8 @@ class VideoPreprocessor:
         self.include_hands = include_hands
 
         # Define landmark indices for each component
-        self.pose_landmarks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
-        self.face_landmarks = [234, 93, 132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 367, 288, 435, 361, 401, 323, 366, 454]
+        self.pose_landmarks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        self.face_landmarks = [132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 367, 288, 435, 361]
         self.hand_landmarks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
     def build_adjacency_matrices(self) -> Dict[str, np.ndarray]:
@@ -208,7 +208,7 @@ class VideoPreprocessor:
 
         # Connect face to pose (nose)
         if self.include_face and self.include_pose:
-            face_nose_orig = 0  # Nose is index 0 in both
+            face_nose_orig = 1  # Nose is index 0 in both
             pose_nose_orig = 0
 
             face_nose_unified = indices_pos["face"][0] + face_idx_map[face_nose_orig]
