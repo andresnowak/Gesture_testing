@@ -6,6 +6,7 @@ Processes sign language videos using MediaPipe Holistic to extract landmarks.
 
 import argparse
 import sys
+import pandas as pd
 from pathlib import Path
 from src.data_preprocessing.video_preprocessor import VideoPreprocessor, CoordinateSystem
 
@@ -110,6 +111,14 @@ def parse_args():
         help="Save annotated videos with landmarks drawn (can be slow and use disk space)",
     )
 
+    # Dataset info JSON
+    parser.add_argument(
+        "--dataset_json",
+        type=str,
+        required=True,
+        help="Path to dataset JSON file to map video IDs to gloss names (e.g., data/WLASL_v0.3.json)",
+    )
+
     return parser.parse_args()
 
 
@@ -126,6 +135,15 @@ def main():
     # Create output directory
     output_path = Path(args.output_folder)
     output_path.mkdir(parents=True, exist_ok=True)
+
+    # Load gloss mapping from JSON
+    df_wlasl = pd.read_json(args.dataset_json)
+    df_exploded = df_wlasl.explode("instances")
+    df_wlasl_info = pd.concat(
+        [df_exploded["gloss"], df_exploded["instances"].apply(pd.Series)], axis=1
+    )
+    gloss_mapping = dict(zip(df_wlasl_info["video_id"].astype(str), df_wlasl_info["gloss"]))
+    print(f"Loaded gloss mapping for {len(gloss_mapping)} videos from {args.dataset_json}")
 
     # Convert coordinate system strings to enum
     coordinate_systems = []
@@ -151,6 +169,7 @@ def main():
             output_folder=args.output_folder,
             video_extensions=args.video_extensions,
             coordinate_systems=coordinate_systems,
+            gloss_mapping=gloss_mapping,
         )
         print("\n" + "=" * 80)
         print("Processing completed successfully!")

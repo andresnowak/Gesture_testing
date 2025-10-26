@@ -597,6 +597,7 @@ class VideoPreprocessor:
         self,
         video_path: str,
         output_dir: str,
+        gloss_mapping: Dict[str, str],
         save_annotated_video: bool = True,
         coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL],
     ) -> Dict:
@@ -623,7 +624,10 @@ class VideoPreprocessor:
                                                    CoordinateSystem.SHOULDER_CENTERED])
         """
         video_name = Path(video_path).stem
-        gloss = video_name.split("-")[-1].split(" ")[0].replace("seed", "")
+
+        # video_name is the video_id (e.g., "12345" from "12345.mp4")
+        gloss = gloss_mapping[video_name]
+
         output_dir_gloss = os.path.join(output_dir, gloss)
         os.makedirs(output_dir_gloss, exist_ok=True)
 
@@ -907,6 +911,7 @@ class VideoPreprocessor:
         self,
         input_folder: str,
         output_folder: str,
+        gloss_mapping: Dict[str, str],
         video_extensions: List[str] = [".mp4", ".avi", ".mov", ".mkv"],
         coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL],
     ):
@@ -918,6 +923,7 @@ class VideoPreprocessor:
             output_folder: Output folder for processed data
             video_extensions: List of video file extensions to process
             coordinate_systems: List of coordinate systems to save
+            gloss_mapping: Dictionary mapping video_id to gloss name
         """
         input_path = Path(input_folder)
         output_path = Path(output_folder)
@@ -940,7 +946,10 @@ class VideoPreprocessor:
         for i, video_path in enumerate(video_files):
             print(f"\n--- Processing video {i + 1}/{len(video_files)} ---")
             self.process_video(
-                str(video_path), str(output_path), coordinate_systems=coordinate_systems
+                str(video_path),
+                str(output_path),
+                gloss_mapping=gloss_mapping,
+                coordinate_systems=coordinate_systems,
             )
 
         print(f"\nAll videos processed! Output saved to: {output_folder}")
@@ -951,6 +960,7 @@ if __name__ == "__main__":
     # Configuration
     input_folder = "data/asl_videos"  # Change this to your input folder path
     output_folder = "data/asl_info"  # Change this to your output folder path
+    json_file = "data/WLASL_v0.3.json"
 
     # Create preprocessor instance
     # Example 1: Include all body parts (default)
@@ -966,5 +976,6 @@ if __name__ == "__main__":
     preprocessor.process_folder(
         input_folder,
         output_folder,
+        json_file,
         coordinate_systems=[CoordinateSystem.SHOULDER_CENTERED],
     )
