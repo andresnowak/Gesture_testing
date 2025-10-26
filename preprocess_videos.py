@@ -4,8 +4,6 @@ import numpy as np
 import mediapipe as mp
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-import json
-import pickle
 from enum import Enum
 
 
@@ -659,7 +657,7 @@ class VideoPreprocessor:
                                output_dir: str,
                                coordinate_system: str = "original"):
         """
-        Save landmarks dataset in multiple formats
+        Save landmarks dataset in NPZ format
 
         Args:
             landmarks_data: List of frame landmarks
@@ -678,18 +676,11 @@ class VideoPreprocessor:
             face_size = len(self.face_landmarks)
             hand_size = len(self.hand_landmarks)
 
-            # Initialize data structures
-            data_to_save = {}
             npz_arrays = {}
-            metadata = {
-                'num_frames': num_frames,
-                'coordinate_system': coordinate_system,
-                'included_parts': []
-            }
+            included_parts = []
 
             # Build and add adjacency matrices
             adjacency_matrices = self.build_adjacency_matrices()
-            data_to_save['adjacency_matrices'] = adjacency_matrices
             for key, adj_matrix in adjacency_matrices.items():
                 npz_arrays[f'adj_{key}'] = adj_matrix
 
@@ -701,11 +692,9 @@ class VideoPreprocessor:
                         pose_data.append(frame_landmarks['pose'])
                     else:
                         pose_data.append(np.zeros((pose_size, 4)))
-                pose_data = np.array(pose_data)
-                data_to_save['pose'] = pose_data
-                npz_arrays['pose'] = pose_data
-                metadata['pose_landmarks'] = self.pose_landmarks
-                metadata['included_parts'].append('pose')
+                npz_arrays['pose'] = np.array(pose_data)
+                npz_arrays['pose_landmarks'] = np.array(self.pose_landmarks)
+                included_parts.append('pose')
 
             if self.include_face:
                 face_data = []
@@ -714,11 +703,9 @@ class VideoPreprocessor:
                         face_data.append(frame_landmarks['face'])
                     else:
                         face_data.append(np.zeros((face_size, 4)))
-                face_data = np.array(face_data)
-                data_to_save['face'] = face_data
-                npz_arrays['face'] = face_data
-                metadata['face_landmarks'] = self.face_landmarks
-                metadata['included_parts'].append('face')
+                npz_arrays['face'] = np.array(face_data)
+                npz_arrays['face_landmarks'] = np.array(self.face_landmarks)
+                included_parts.append('face')
 
             if self.include_hands:
                 left_hand_data = []
@@ -730,25 +717,21 @@ class VideoPreprocessor:
                     else:
                         left_hand_data.append(np.zeros((hand_size, 4)))
                         right_hand_data.append(np.zeros((hand_size, 4)))
-                left_hand_data = np.array(left_hand_data)
-                right_hand_data = np.array(right_hand_data)
-                data_to_save['left_hand'] = left_hand_data
-                data_to_save['right_hand'] = right_hand_data
-                npz_arrays['left_hand'] = left_hand_data
-                npz_arrays['right_hand'] = right_hand_data
-                metadata['hand_landmarks'] = self.hand_landmarks
-                metadata['included_parts'].extend(['left_hand', 'right_hand'])
+                npz_arrays['left_hand'] = np.array(left_hand_data)
+                npz_arrays['right_hand'] = np.array(right_hand_data)
+                npz_arrays['hand_landmarks'] = np.array(self.hand_landmarks)
+                included_parts.extend(['left_hand', 'right_hand'])
 
-            # Save as numpy arrays
+            # Add metadata as arrays
+            npz_arrays['num_frames'] = np.array([num_frames])
+            npz_arrays['coordinate_system'] = np.array([coordinate_system], dtype='U20')
+            npz_arrays['included_parts'] = np.array(included_parts, dtype='U20')
+
+            # Save as compressed numpy arrays
             np.savez_compressed(
                 os.path.join(output_dir, f"{video_name}{suffix}_landmarks.npz"),
                 **npz_arrays
             )
-
-            # Save as pickle
-            dataset = {**data_to_save, 'metadata': metadata}
-            with open(os.path.join(output_dir, f"{video_name}{suffix}_dataset.pkl"), 'wb') as f:
-                pickle.dump(dataset, f)
 
         else:  # shoulder_centered - unified graph
             # Handle unified graph format
@@ -775,74 +758,61 @@ class VideoPreprocessor:
             # Build unified adjacency matrix
             unified_adj_matrix = self.build_unified_adjacency_matrix()
 
-            # Save as numpy array (unified graph and adjacency matrix)
-            np.savez_compressed(
-                os.path.join(output_dir, f"{video_name}{suffix}_landmarks.npz"),
-                unified_graph=unified_data,
-                adjacency_matrix=unified_adj_matrix
-            )
-
-            # Build landmark structure dynamically based on included parts
-            landmark_structure = {}
+            # Build landmark structure metadata
             included_parts = []
+            landmark_indices = []
+            landmark_starts = []
+            landmark_ends = []
+            landmark_counts = []
             current_idx = 0
 
             if self.include_pose:
                 pose_count = len(self.pose_landmarks)
-                landmark_structure['pose'] = {
-                    'start': current_idx,
-                    'end': current_idx + pose_count,
-                    'count': pose_count,
-                    'indices': self.pose_landmarks
-                }
-                current_idx += pose_count
                 included_parts.append('pose')
+                landmark_indices.extend(self.pose_landmarks)
+                landmark_starts.append(current_idx)
+                landmark_ends.append(current_idx + pose_count)
+                landmark_counts.append(pose_count)
+                current_idx += pose_count
 
             if self.include_face:
                 face_count = len(self.face_landmarks)
-                landmark_structure['face'] = {
-                    'start': current_idx,
-                    'end': current_idx + face_count,
-                    'count': face_count,
-                    'indices': self.face_landmarks
-                }
-                current_idx += face_count
                 included_parts.append('face')
+                landmark_indices.extend(self.face_landmarks)
+                landmark_starts.append(current_idx)
+                landmark_ends.append(current_idx + face_count)
+                landmark_counts.append(face_count)
+                current_idx += face_count
 
             if self.include_hands:
                 hand_count = len(self.hand_landmarks)
-                landmark_structure['left_hand'] = {
-                    'start': current_idx,
-                    'end': current_idx + hand_count,
-                    'count': hand_count,
-                    'indices': self.hand_landmarks
-                }
-                current_idx += hand_count
-
-                landmark_structure['right_hand'] = {
-                    'start': current_idx,
-                    'end': current_idx + hand_count,
-                    'count': hand_count,
-                    'indices': self.hand_landmarks
-                }
-                current_idx += hand_count
                 included_parts.extend(['left_hand', 'right_hand'])
+                landmark_indices.extend(self.hand_landmarks)
+                landmark_starts.append(current_idx)
+                landmark_ends.append(current_idx + hand_count)
+                landmark_counts.append(hand_count)
+                current_idx += hand_count
 
-            # Save as pickle
-            dataset = {
-                'unified_graph': unified_data,
-                'adjacency_matrix': unified_adj_matrix,
-                'metadata': {
-                    'num_frames': num_frames,
-                    'coordinate_system': coordinate_system,
-                    'total_landmarks': total_landmarks,
-                    'included_parts': included_parts,
-                    'landmark_structure': landmark_structure
-                }
-            }
+                landmark_indices.extend(self.hand_landmarks)
+                landmark_starts.append(current_idx)
+                landmark_ends.append(current_idx + hand_count)
+                landmark_counts.append(hand_count)
+                current_idx += hand_count
 
-            with open(os.path.join(output_dir, f"{video_name}{suffix}_dataset.pkl"), 'wb') as f:
-                pickle.dump(dataset, f)
+            # Save as compressed numpy array with all metadata
+            np.savez_compressed(
+                os.path.join(output_dir, f"{video_name}{suffix}_landmarks.npz"),
+                unified_graph=unified_data,
+                adjacency_matrix=unified_adj_matrix,
+                num_frames=np.array([num_frames]),
+                coordinate_system=np.array([coordinate_system], dtype='U20'),
+                total_landmarks=np.array([total_landmarks]),
+                included_parts=np.array(included_parts, dtype='U20'),
+                landmark_indices=np.array(landmark_indices),
+                landmark_starts=np.array(landmark_starts),
+                landmark_ends=np.array(landmark_ends),
+                landmark_counts=np.array(landmark_counts)
+            )
 
         print(f"Dataset ({coordinate_system}) saved for {video_name} with {num_frames} frames")
 
@@ -904,24 +874,6 @@ if __name__ == "__main__":
         include_face=True,
         include_hands=True
     )
-
-    # Example 2: Only hands and face (no pose)
-    # preprocessor = VideoPreprocessor(
-    #     min_detection_confidence=0.5,
-    #     min_tracking_confidence=0.5,
-    #     include_pose=False,
-    #     include_face=True,
-    #     include_hands=True
-    # )
-
-    # Example 3: Only hands
-    # preprocessor = VideoPreprocessor(
-    #     min_detection_confidence=0.5,
-    #     min_tracking_confidence=0.5,
-    #     include_pose=False,
-    #     include_face=False,
-    #     include_hands=True
-    # )
 
     # Process all videos in the folder
     preprocessor.process_folder(input_folder, output_folder, coordinate_systems=[CoordinateSystem.SHOULDER_CENTERED])
