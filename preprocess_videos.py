@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import mediapipe as mp
+import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from enum import Enum
@@ -9,18 +10,23 @@ from enum import Enum
 
 # NOTE: We use the normalized landmarks (normalized based on height and width of the image)
 
+
 class CoordinateSystem(Enum):
     """Enum for different coordinate systems"""
+
     ORIGINAL = "original"  # Raw MediaPipe normalized coordinates [0,1]
     SHOULDER_CENTERED = "shoulder_centered"  # Unified shoulder-centered coordinates
 
+
 class VideoPreprocessor:
-    def __init__(self,
-                 min_detection_confidence: float = 0.5,
-                 min_tracking_confidence: float = 0.5,
-                 include_pose: bool = True,
-                 include_face: bool = True,
-                 include_hands: bool = True):
+    def __init__(
+        self,
+        min_detection_confidence: float = 0.5,
+        min_tracking_confidence: float = 0.5,
+        include_pose: bool = True,
+        include_face: bool = True,
+        include_hands: bool = True,
+    ):
         """
         Initialize MediaPipe Holistic model
 
@@ -38,7 +44,7 @@ class VideoPreprocessor:
         # Initialize Holistic model
         self.holistic = self.mp_holistic.Holistic(
             min_detection_confidence=min_detection_confidence,
-            min_tracking_confidence=min_tracking_confidence
+            min_tracking_confidence=min_tracking_confidence,
         )
 
         # Body part selection flags
@@ -48,7 +54,28 @@ class VideoPreprocessor:
 
         # Define landmark indices for each component
         self.pose_landmarks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-        self.face_landmarks = [132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 367, 288, 435, 361]
+        self.face_landmarks = [
+            1,
+            132,
+            58,
+            172,
+            136,
+            150,
+            149,
+            176,
+            148,
+            152,
+            377,
+            400,
+            378,
+            379,
+            365,
+            397,
+            367,
+            288,
+            435,
+            361,
+        ]
         self.hand_landmarks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
     def build_adjacency_matrices(self) -> Dict[str, np.ndarray]:
@@ -65,7 +92,10 @@ class VideoPreprocessor:
             pose_adj = np.zeros((pose_size, pose_size), dtype=np.float32)
 
             # Create mapping from original index to filtered index
-            pose_idx_map = {orig_idx: new_idx for new_idx, orig_idx in enumerate(self.pose_landmarks)}
+            pose_idx_map = {
+                orig_idx: new_idx
+                for new_idx, orig_idx in enumerate(self.pose_landmarks)
+            }
 
             # Add edges from POSE_CONNECTIONS
             for connection in self.mp_holistic.POSE_CONNECTIONS:
@@ -77,7 +107,7 @@ class VideoPreprocessor:
                     pose_adj[new_start, new_end] = 1.0
                     pose_adj[new_end, new_start] = 1.0  # Undirected graph
 
-            adjacency_matrices['pose'] = pose_adj
+            adjacency_matrices["pose"] = pose_adj
 
         # Build face adjacency matrix
         if self.include_face:
@@ -85,7 +115,10 @@ class VideoPreprocessor:
             face_adj = np.zeros((face_size, face_size), dtype=np.float32)
 
             # Create mapping from original index to filtered index
-            face_idx_map = {orig_idx: new_idx for new_idx, orig_idx in enumerate(self.face_landmarks)}
+            face_idx_map = {
+                orig_idx: new_idx
+                for new_idx, orig_idx in enumerate(self.face_landmarks)
+            }
 
             # Add edges from FACEMESH_CONTOURS
             for connection in self.mp_holistic.FACEMESH_CONTOURS:
@@ -97,7 +130,7 @@ class VideoPreprocessor:
                     face_adj[new_start, new_end] = 1.0
                     face_adj[new_end, new_start] = 1.0  # Undirected graph
 
-            adjacency_matrices['face'] = face_adj
+            adjacency_matrices["face"] = face_adj
 
         # Build hand adjacency matrices (same structure for both hands)
         if self.include_hands:
@@ -105,7 +138,10 @@ class VideoPreprocessor:
             hand_adj = np.zeros((hand_size, hand_size), dtype=np.float32)
 
             # Create mapping from original index to filtered index
-            hand_idx_map = {orig_idx: new_idx for new_idx, orig_idx in enumerate(self.hand_landmarks)}
+            hand_idx_map = {
+                orig_idx: new_idx
+                for new_idx, orig_idx in enumerate(self.hand_landmarks)
+            }
 
             # Add edges from HAND_CONNECTIONS
             for connection in self.mp_holistic.HAND_CONNECTIONS:
@@ -117,8 +153,10 @@ class VideoPreprocessor:
                     hand_adj[new_start, new_end] = 1.0
                     hand_adj[new_end, new_start] = 1.0  # Undirected graph
 
-            adjacency_matrices['left_hand'] = hand_adj
-            adjacency_matrices['right_hand'] = hand_adj.copy()  # Same structure for both hands
+            adjacency_matrices["left_hand"] = hand_adj
+            adjacency_matrices["right_hand"] = (
+                hand_adj.copy()
+            )  # Same structure for both hands
 
         return adjacency_matrices
 
@@ -150,11 +188,20 @@ class VideoPreprocessor:
 
         # Create index mappings from original MediaPipe indices to filtered indices
         if self.include_pose:
-            pose_idx_map = {orig_idx: new_idx for new_idx, orig_idx in enumerate(self.pose_landmarks)}
+            pose_idx_map = {
+                orig_idx: new_idx
+                for new_idx, orig_idx in enumerate(self.pose_landmarks)
+            }
         if self.include_face:
-            face_idx_map = {orig_idx: new_idx for new_idx, orig_idx in enumerate(self.face_landmarks)}
+            face_idx_map = {
+                orig_idx: new_idx
+                for new_idx, orig_idx in enumerate(self.face_landmarks)
+            }
         if self.include_hands:
-            hand_idx_map = {orig_idx: new_idx for new_idx, orig_idx in enumerate(self.hand_landmarks)}
+            hand_idx_map = {
+                orig_idx: new_idx
+                for new_idx, orig_idx in enumerate(self.hand_landmarks)
+            }
 
         # Fill in the unified matrix block by block
         current_idx = 0
@@ -162,25 +209,37 @@ class VideoPreprocessor:
 
         if self.include_pose:
             pose_size = len(self.pose_landmarks)
-            unified_adj[current_idx:current_idx+pose_size, current_idx:current_idx+pose_size] = adj_matrices['pose']
+            unified_adj[
+                current_idx : current_idx + pose_size,
+                current_idx : current_idx + pose_size,
+            ] = adj_matrices["pose"]
             indices_pos["pose"] = (current_idx, current_idx + pose_size)
             current_idx += pose_size
 
         if self.include_face:
             face_size = len(self.face_landmarks)
-            unified_adj[current_idx:current_idx+face_size, current_idx:current_idx+face_size] = adj_matrices['face']
+            unified_adj[
+                current_idx : current_idx + face_size,
+                current_idx : current_idx + face_size,
+            ] = adj_matrices["face"]
             indices_pos["face"] = (current_idx, current_idx + face_size)
             current_idx += face_size
 
         if self.include_hands:
             hand_size = len(self.hand_landmarks)
             # Left hand (MediaPipe left = actually right hand in mirrored video)
-            unified_adj[current_idx:current_idx+hand_size, current_idx:current_idx+hand_size] = adj_matrices['left_hand']
+            unified_adj[
+                current_idx : current_idx + hand_size,
+                current_idx : current_idx + hand_size,
+            ] = adj_matrices["left_hand"]
             indices_pos["left_hand"] = (current_idx, current_idx + hand_size)
             current_idx += hand_size
 
             # Right hand (MediaPipe right = actually left hand in mirrored video)
-            unified_adj[current_idx:current_idx+hand_size, current_idx:current_idx+hand_size] = adj_matrices['right_hand']
+            unified_adj[
+                current_idx : current_idx + hand_size,
+                current_idx : current_idx + hand_size,
+            ] = adj_matrices["right_hand"]
             indices_pos["right_hand"] = (current_idx, current_idx + hand_size)
 
         # Add inter-body-part connections
@@ -193,14 +252,22 @@ class VideoPreprocessor:
 
             if hand_wrist_orig in hand_idx_map:
                 # Connect left hand wrist to pose right wrist (because of mirroring)
-                left_hand_wrist_unified = indices_pos["left_hand"][0] + hand_idx_map[hand_wrist_orig]
-                pose_right_wrist_unified = indices_pos["pose"][0] + pose_idx_map[right_wrist_pose_orig]
+                left_hand_wrist_unified = (
+                    indices_pos["left_hand"][0] + hand_idx_map[hand_wrist_orig]
+                )
+                pose_right_wrist_unified = (
+                    indices_pos["pose"][0] + pose_idx_map[right_wrist_pose_orig]
+                )
                 unified_adj[left_hand_wrist_unified, pose_right_wrist_unified] = 1.0
                 unified_adj[pose_right_wrist_unified, left_hand_wrist_unified] = 1.0
 
                 # Connect right hand wrist to pose left wrist (because of mirroring)
-                right_hand_wrist_unified = indices_pos["right_hand"][0] + hand_idx_map[hand_wrist_orig]
-                pose_left_wrist_unified = indices_pos["pose"][0] + pose_idx_map[left_wrist_pose_orig]
+                right_hand_wrist_unified = (
+                    indices_pos["right_hand"][0] + hand_idx_map[hand_wrist_orig]
+                )
+                pose_left_wrist_unified = (
+                    indices_pos["pose"][0] + pose_idx_map[left_wrist_pose_orig]
+                )
                 unified_adj[right_hand_wrist_unified, pose_left_wrist_unified] = 1.0
                 unified_adj[pose_left_wrist_unified, right_hand_wrist_unified] = 1.0
 
@@ -235,7 +302,7 @@ class VideoPreprocessor:
             return 0.0
 
         # Calculate distance from nearest edge
-        dist_to_edge = min(x, 1-x, y, 1-y)
+        dist_to_edge = min(x, 1 - x, y, 1 - y)
 
         # Normalize: 0 at boundary, 1.0 at margin distance inward
         visibility = min(dist_to_edge / margin, 1.0)
@@ -265,31 +332,28 @@ class VideoPreprocessor:
         right_shoulder = pose_norm[12]
 
         shoulder_center = {
-            'x': (left_shoulder.x + right_shoulder.x) / 2,
-            'y': (left_shoulder.y + right_shoulder.y) / 2,
-            'z': (left_shoulder.z + right_shoulder.z) / 2
+            "x": (left_shoulder.x + right_shoulder.x) / 2,
+            "y": (left_shoulder.y + right_shoulder.y) / 2,
+            "z": (left_shoulder.z + right_shoulder.z) / 2,
         }
 
-        unified_data = {
-            'pose': [],
-            'face': [],
-            'left_hand': [],
-            'right_hand': []
-        }
+        unified_data = {"pose": [], "face": [], "left_hand": [], "right_hand": []}
 
         # Transform pose to shoulder-centered
         for landmark in pose_norm:
-            unified_data['pose'].append({
-                'x': landmark.x - shoulder_center['x'],
-                'y': landmark.y - shoulder_center['y'],
-                'z': landmark.z - shoulder_center['z'],
-                'visibility': landmark.visibility
-            })
+            unified_data["pose"].append(
+                {
+                    "x": landmark.x - shoulder_center["x"],
+                    "y": landmark.y - shoulder_center["y"],
+                    "z": landmark.z - shoulder_center["z"],
+                    "visibility": landmark.visibility,
+                }
+            )
 
         # Get shoulder-centered anchor points
-        nose_shoulder_centered = unified_data['pose'][0]
-        left_wrist_shoulder_centered = unified_data['pose'][15]
-        right_wrist_shoulder_centered = unified_data['pose'][16]
+        nose_shoulder_centered = unified_data["pose"][0]
+        left_wrist_shoulder_centered = unified_data["pose"][15]
+        right_wrist_shoulder_centered = unified_data["pose"][16]
 
         # Transform face using nose as anchor
         if results.face_landmarks:
@@ -303,11 +367,13 @@ class VideoPreprocessor:
                 offset_z = landmark.z - nose_face.z
 
                 # Apply displacement to shoulder-centered nose position
-                unified_data['face'].append({
-                    'x': nose_shoulder_centered['x'] + offset_x,
-                    'y': nose_shoulder_centered['y'] + offset_y,
-                    'z': nose_shoulder_centered['z'] + offset_z
-                })
+                unified_data["face"].append(
+                    {
+                        "x": nose_shoulder_centered["x"] + offset_x,
+                        "y": nose_shoulder_centered["y"] + offset_y,
+                        "z": nose_shoulder_centered["z"] + offset_z,
+                    }
+                )
 
         # Transform left hand using wrist as anchor
         if results.left_hand_landmarks:
@@ -321,11 +387,13 @@ class VideoPreprocessor:
                 offset_z = landmark.z - left_wrist_hand.z
 
                 # Apply displacement to shoulder-centered wrist position
-                unified_data['left_hand'].append({
-                    'x': left_wrist_shoulder_centered['x'] + offset_x,
-                    'y': left_wrist_shoulder_centered['y'] + offset_y,
-                    'z': left_wrist_shoulder_centered['z'] + offset_z
-                })
+                unified_data["left_hand"].append(
+                    {
+                        "x": left_wrist_shoulder_centered["x"] + offset_x,
+                        "y": left_wrist_shoulder_centered["y"] + offset_y,
+                        "z": left_wrist_shoulder_centered["z"] + offset_z,
+                    }
+                )
 
         # Transform right hand using wrist as anchor
         if results.right_hand_landmarks:
@@ -339,11 +407,13 @@ class VideoPreprocessor:
                 offset_z = landmark.z - right_wrist_hand.z
 
                 # Apply displacement to shoulder-centered wrist position
-                unified_data['right_hand'].append({
-                    'x': right_wrist_shoulder_centered['x'] + offset_x,
-                    'y': right_wrist_shoulder_centered['y'] + offset_y,
-                    'z': right_wrist_shoulder_centered['z'] + offset_z
-                })
+                unified_data["right_hand"].append(
+                    {
+                        "x": right_wrist_shoulder_centered["x"] + offset_x,
+                        "y": right_wrist_shoulder_centered["y"] + offset_y,
+                        "z": right_wrist_shoulder_centered["z"] + offset_z,
+                    }
+                )
 
         return unified_data
 
@@ -361,10 +431,12 @@ class VideoPreprocessor:
                 pose_landmarks = []
                 for index, landmark in enumerate(results.pose_landmarks.landmark):
                     if index in self.pose_landmarks:
-                        pose_landmarks.append([landmark.x, landmark.y, landmark.z, landmark.visibility])
-                landmarks_data['pose'] = np.array(pose_landmarks)
+                        pose_landmarks.append(
+                            [landmark.x, landmark.y, landmark.z, landmark.visibility]
+                        )
+                landmarks_data["pose"] = np.array(pose_landmarks)
             else:
-                landmarks_data['pose'] = np.zeros((len(self.pose_landmarks), 4))
+                landmarks_data["pose"] = np.zeros((len(self.pose_landmarks), 4))
 
         # Face landmarks
         if self.include_face:
@@ -373,10 +445,12 @@ class VideoPreprocessor:
                 for index, landmark in enumerate(results.face_landmarks.landmark):
                     if index in self.face_landmarks:
                         visibility = self.calculate_visibility_score(landmark)
-                        face_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
-                landmarks_data['face'] = np.array(face_landmarks)
+                        face_landmarks.append(
+                            [landmark.x, landmark.y, landmark.z, visibility]
+                        )
+                landmarks_data["face"] = np.array(face_landmarks)
             else:
-                landmarks_data['face'] = np.zeros((len(self.face_landmarks), 4))
+                landmarks_data["face"] = np.zeros((len(self.face_landmarks), 4))
 
         # Hand landmarks
         if self.include_hands:
@@ -386,10 +460,12 @@ class VideoPreprocessor:
                 for index, landmark in enumerate(results.left_hand_landmarks.landmark):
                     if index in self.hand_landmarks:
                         visibility = self.calculate_visibility_score(landmark)
-                        left_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
-                landmarks_data['left_hand'] = np.array(left_hand_landmarks)
+                        left_hand_landmarks.append(
+                            [landmark.x, landmark.y, landmark.z, visibility]
+                        )
+                landmarks_data["left_hand"] = np.array(left_hand_landmarks)
             else:
-                landmarks_data['left_hand'] = np.zeros((len(self.hand_landmarks), 4))
+                landmarks_data["left_hand"] = np.zeros((len(self.hand_landmarks), 4))
 
             # Right hand landmarks
             if results.right_hand_landmarks:
@@ -397,10 +473,12 @@ class VideoPreprocessor:
                 for index, landmark in enumerate(results.right_hand_landmarks.landmark):
                     if index in self.hand_landmarks:
                         visibility = self.calculate_visibility_score(landmark)
-                        right_hand_landmarks.append([landmark.x, landmark.y, landmark.z, visibility])
-                landmarks_data['right_hand'] = np.array(right_hand_landmarks)
+                        right_hand_landmarks.append(
+                            [landmark.x, landmark.y, landmark.z, visibility]
+                        )
+                landmarks_data["right_hand"] = np.array(right_hand_landmarks)
             else:
-                landmarks_data['right_hand'] = np.zeros((len(self.hand_landmarks), 4))
+                landmarks_data["right_hand"] = np.zeros((len(self.hand_landmarks), 4))
 
         return landmarks_data
 
@@ -420,11 +498,13 @@ class VideoPreprocessor:
 
         # Convert pose to numpy array - FILTER selected landmarks only
         if self.include_pose:
-            if unified_data['pose']:
+            if unified_data["pose"]:
                 pose_array = []
                 for idx in self.pose_landmarks:
-                    lm = unified_data['pose'][idx]
-                    pose_array.append([lm['x'], lm['y'], lm['z'], lm.get('visibility', 1.0)])
+                    lm = unified_data["pose"][idx]
+                    pose_array.append(
+                        [lm["x"], lm["y"], lm["z"], lm.get("visibility", 1.0)]
+                    )
                 pose_landmarks = np.array(pose_array)
             else:
                 pose_landmarks = np.zeros((len(self.pose_landmarks), 4))
@@ -432,13 +512,15 @@ class VideoPreprocessor:
 
         # Convert face to numpy array - FILTER selected landmarks only
         if self.include_face:
-            if unified_data['face'] and results.face_landmarks:
+            if unified_data["face"] and results.face_landmarks:
                 face_array = []
                 for idx in self.face_landmarks:
-                    lm = unified_data['face'][idx]
+                    lm = unified_data["face"][idx]
                     # Calculate visibility from original normalized coordinates
-                    visibility = self.calculate_visibility_score(results.face_landmarks.landmark[idx])
-                    face_array.append([lm['x'], lm['y'], lm['z'], visibility])
+                    visibility = self.calculate_visibility_score(
+                        results.face_landmarks.landmark[idx]
+                    )
+                    face_array.append([lm["x"], lm["y"], lm["z"], visibility])
                 face_landmarks = np.array(face_array)
             else:
                 face_landmarks = np.zeros((len(self.face_landmarks), 4))
@@ -447,26 +529,30 @@ class VideoPreprocessor:
         # Convert hands to numpy arrays - FILTER selected landmarks only
         if self.include_hands:
             # Left hand
-            if unified_data['left_hand'] and results.left_hand_landmarks:
+            if unified_data["left_hand"] and results.left_hand_landmarks:
                 left_hand_array = []
                 for idx in self.hand_landmarks:
-                    lm = unified_data['left_hand'][idx]
+                    lm = unified_data["left_hand"][idx]
                     # Calculate visibility from original normalized coordinates
-                    visibility = self.calculate_visibility_score(results.left_hand_landmarks.landmark[idx])
-                    left_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
+                    visibility = self.calculate_visibility_score(
+                        results.left_hand_landmarks.landmark[idx]
+                    )
+                    left_hand_array.append([lm["x"], lm["y"], lm["z"], visibility])
                 left_hand_landmarks = np.array(left_hand_array)
             else:
                 left_hand_landmarks = np.zeros((len(self.hand_landmarks), 4))
             landmarks_to_concatenate.append(left_hand_landmarks)
 
             # Right hand
-            if unified_data['right_hand'] and results.right_hand_landmarks:
+            if unified_data["right_hand"] and results.right_hand_landmarks:
                 right_hand_array = []
                 for idx in self.hand_landmarks:
-                    lm = unified_data['right_hand'][idx]
+                    lm = unified_data["right_hand"][idx]
                     # Calculate visibility from original normalized coordinates
-                    visibility = self.calculate_visibility_score(results.right_hand_landmarks.landmark[idx])
-                    right_hand_array.append([lm['x'], lm['y'], lm['z'], visibility])
+                    visibility = self.calculate_visibility_score(
+                        results.right_hand_landmarks.landmark[idx]
+                    )
+                    right_hand_array.append([lm["x"], lm["y"], lm["z"], visibility])
                 right_hand_landmarks = np.array(right_hand_array)
             else:
                 right_hand_landmarks = np.zeros((len(self.hand_landmarks), 4))
@@ -493,7 +579,7 @@ class VideoPreprocessor:
                 annotated_frame,
                 results.pose_landmarks,
                 self.mp_holistic.POSE_CONNECTIONS,
-                landmark_drawing_spec=self.mp_drawing_styles.get_default_pose_landmarks_style()
+                landmark_drawing_spec=self.mp_drawing_styles.get_default_pose_landmarks_style(),
             )
 
         # Draw face landmarks
@@ -503,7 +589,7 @@ class VideoPreprocessor:
                 results.face_landmarks,
                 self.mp_holistic.FACEMESH_CONTOURS,
                 landmark_drawing_spec=None,
-                connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_contours_style()
+                connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_contours_style(),
             )
 
         # Draw left hand landmarks
@@ -513,7 +599,7 @@ class VideoPreprocessor:
                 results.left_hand_landmarks,
                 self.mp_holistic.HAND_CONNECTIONS,
                 landmark_drawing_spec=self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                connection_drawing_spec=self.mp_drawing_styles.get_default_hand_connections_style()
+                connection_drawing_spec=self.mp_drawing_styles.get_default_hand_connections_style(),
             )
 
         # Draw right hand landmarks
@@ -523,16 +609,19 @@ class VideoPreprocessor:
                 results.right_hand_landmarks,
                 self.mp_holistic.HAND_CONNECTIONS,
                 landmark_drawing_spec=self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                connection_drawing_spec=self.mp_drawing_styles.get_default_hand_connections_style()
+                connection_drawing_spec=self.mp_drawing_styles.get_default_hand_connections_style(),
             )
 
         return annotated_frame
 
-    def process_video(self,
-                     video_path: str,
-                     output_dir: str,
-                     save_annotated_video: bool = True,
-                     coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL]) -> Dict:
+    def process_video(
+        self,
+        video_path: str,
+        output_dir: str,
+        gloss: str,
+        save_annotated_video: bool = True,
+        coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL],
+    ) -> Dict:
         """
         Process a single video file
 
@@ -543,6 +632,7 @@ class VideoPreprocessor:
             coordinate_systems: List of coordinate systems to save. Options:
                 - CoordinateSystem.ORIGINAL: Raw MediaPipe normalized coordinates [0,1]
                 - CoordinateSystem.SHOULDER_CENTERED: Unified shoulder-centered coordinates
+            gloss: Optional gloss label for the video. If not provided, will be extracted from filename
 
         Example:
             # Save only original coordinates
@@ -556,7 +646,7 @@ class VideoPreprocessor:
                                                    CoordinateSystem.SHOULDER_CENTERED])
         """
         video_name = Path(video_path).stem
-        gloss = video_name.split("-")[-1].split(" ")[0].replace("seed", "")
+
         output_dir_gloss = os.path.join(output_dir, gloss)
         os.makedirs(output_dir_gloss, exist_ok=True)
 
@@ -572,18 +662,28 @@ class VideoPreprocessor:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         print(f"Processing video: {video_name}")
-        print(f"Resolution: {frame_width}x{frame_height}, FPS: {fps}, Frames: {total_frames}")
+        print(
+            f"Resolution: {frame_width}x{frame_height}, FPS: {fps}, Frames: {total_frames}"
+        )
         print(f"Saving coordinate systems: {[cs.value for cs in coordinate_systems]}")
 
         # Setup output video writer if needed
         if save_annotated_video:
-            output_video_path = os.path.join(output_dir_gloss, f"{video_name}_annotated.mp4")
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out_video = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
+            output_video_path = os.path.join(
+                output_dir_gloss, f"{video_name}_annotated.mp4"
+            )
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            out_video = cv2.VideoWriter(
+                output_video_path, fourcc, fps, (frame_width, frame_height)
+            )
 
         # Storage for different coordinate systems
-        original_landmarks = [] if CoordinateSystem.ORIGINAL in coordinate_systems else None
-        shoulder_centered_landmarks = [] if CoordinateSystem.SHOULDER_CENTERED in coordinate_systems else None
+        original_landmarks = (
+            [] if CoordinateSystem.ORIGINAL in coordinate_systems else None
+        )
+        shoulder_centered_landmarks = (
+            [] if CoordinateSystem.SHOULDER_CENTERED in coordinate_systems else None
+        )
 
         frame_count = 0
 
@@ -631,7 +731,7 @@ class VideoPreprocessor:
                 original_landmarks,
                 video_name,
                 output_dir_gloss,
-                coordinate_system="original"
+                coordinate_system="original",
             )
 
         if CoordinateSystem.SHOULDER_CENTERED in coordinate_systems:
@@ -639,23 +739,25 @@ class VideoPreprocessor:
                 shoulder_centered_landmarks,
                 video_name,
                 output_dir_gloss,
-                coordinate_system="shoulder_centered"
+                coordinate_system="shoulder_centered",
             )
 
         return {
-            'video_name': video_name,
-            'total_frames': frame_count,
-            'original_landmarks': original_landmarks,
-            'shoulder_centered_landmarks': shoulder_centered_landmarks,
-            'fps': fps,
-            'resolution': (frame_width, frame_height)
+            "video_name": video_name,
+            "total_frames": frame_count,
+            "original_landmarks": original_landmarks,
+            "shoulder_centered_landmarks": shoulder_centered_landmarks,
+            "fps": fps,
+            "resolution": (frame_width, frame_height),
         }
 
-    def save_landmarks_dataset(self,
-                               landmarks_data: List,
-                               video_name: str,
-                               output_dir: str,
-                               coordinate_system: str = "original"):
+    def save_landmarks_dataset(
+        self,
+        landmarks_data: List,
+        video_name: str,
+        output_dir: str,
+        coordinate_system: str = "original",
+    ):
         """
         Save landmarks dataset in NPZ format
 
@@ -682,55 +784,59 @@ class VideoPreprocessor:
             # Build and add adjacency matrices
             adjacency_matrices = self.build_adjacency_matrices()
             for key, adj_matrix in adjacency_matrices.items():
-                npz_arrays[f'adj_{key}'] = adj_matrix
+                npz_arrays[f"adj_{key}"] = adj_matrix
 
             # Process each body part if included
             if self.include_pose:
                 pose_data = []
                 for frame_landmarks in landmarks_data:
-                    if frame_landmarks is not None and 'pose' in frame_landmarks:
-                        pose_data.append(frame_landmarks['pose'])
+                    if frame_landmarks is not None and "pose" in frame_landmarks:
+                        pose_data.append(frame_landmarks["pose"])
                     else:
                         pose_data.append(np.zeros((pose_size, 4)))
-                npz_arrays['pose'] = np.array(pose_data)
-                npz_arrays['pose_landmarks'] = np.array(self.pose_landmarks)
-                included_parts.append('pose')
+                npz_arrays["pose"] = np.array(pose_data)
+                npz_arrays["pose_landmarks"] = np.array(self.pose_landmarks)
+                included_parts.append("pose")
 
             if self.include_face:
                 face_data = []
                 for frame_landmarks in landmarks_data:
-                    if frame_landmarks is not None and 'face' in frame_landmarks:
-                        face_data.append(frame_landmarks['face'])
+                    if frame_landmarks is not None and "face" in frame_landmarks:
+                        face_data.append(frame_landmarks["face"])
                     else:
                         face_data.append(np.zeros((face_size, 4)))
-                npz_arrays['face'] = np.array(face_data)
-                npz_arrays['face_landmarks'] = np.array(self.face_landmarks)
-                included_parts.append('face')
+                npz_arrays["face"] = np.array(face_data)
+                npz_arrays["face_landmarks"] = np.array(self.face_landmarks)
+                included_parts.append("face")
 
             if self.include_hands:
                 left_hand_data = []
                 right_hand_data = []
                 for frame_landmarks in landmarks_data:
                     if frame_landmarks is not None:
-                        left_hand_data.append(frame_landmarks.get('left_hand', np.zeros((hand_size, 4))))
-                        right_hand_data.append(frame_landmarks.get('right_hand', np.zeros((hand_size, 4))))
+                        left_hand_data.append(
+                            frame_landmarks.get("left_hand", np.zeros((hand_size, 4)))
+                        )
+                        right_hand_data.append(
+                            frame_landmarks.get("right_hand", np.zeros((hand_size, 4)))
+                        )
                     else:
                         left_hand_data.append(np.zeros((hand_size, 4)))
                         right_hand_data.append(np.zeros((hand_size, 4)))
-                npz_arrays['left_hand'] = np.array(left_hand_data)
-                npz_arrays['right_hand'] = np.array(right_hand_data)
-                npz_arrays['hand_landmarks'] = np.array(self.hand_landmarks)
-                included_parts.extend(['left_hand', 'right_hand'])
+                npz_arrays["left_hand"] = np.array(left_hand_data)
+                npz_arrays["right_hand"] = np.array(right_hand_data)
+                npz_arrays["hand_landmarks"] = np.array(self.hand_landmarks)
+                included_parts.extend(["left_hand", "right_hand"])
 
             # Add metadata as arrays
-            npz_arrays['num_frames'] = np.array([num_frames])
-            npz_arrays['coordinate_system'] = np.array([coordinate_system], dtype='U20')
-            npz_arrays['included_parts'] = np.array(included_parts, dtype='U20')
+            npz_arrays["num_frames"] = np.array([num_frames])
+            npz_arrays["coordinate_system"] = np.array([coordinate_system], dtype="U20")
+            npz_arrays["included_parts"] = np.array(included_parts, dtype="U20")
 
             # Save as compressed numpy arrays
             np.savez_compressed(
                 os.path.join(output_dir, f"{video_name}{suffix}_landmarks.npz"),
-                **npz_arrays
+                **npz_arrays,
             )
 
         else:  # shoulder_centered - unified graph
@@ -753,7 +859,9 @@ class VideoPreprocessor:
                     # If no landmarks, create zero array with correct size
                     unified_data.append(np.zeros((total_landmarks, 4)))
 
-            unified_data = np.array(unified_data)  # Shape: (num_frames, total_landmarks, 4)
+            unified_data = np.array(
+                unified_data
+            )  # Shape: (num_frames, total_landmarks, 4)
 
             # Build unified adjacency matrix
             unified_adj_matrix = self.build_unified_adjacency_matrix()
@@ -768,7 +876,7 @@ class VideoPreprocessor:
 
             if self.include_pose:
                 pose_count = len(self.pose_landmarks)
-                included_parts.append('pose')
+                included_parts.append("pose")
                 landmark_indices.extend(self.pose_landmarks)
                 landmark_starts.append(current_idx)
                 landmark_ends.append(current_idx + pose_count)
@@ -777,7 +885,7 @@ class VideoPreprocessor:
 
             if self.include_face:
                 face_count = len(self.face_landmarks)
-                included_parts.append('face')
+                included_parts.append("face")
                 landmark_indices.extend(self.face_landmarks)
                 landmark_starts.append(current_idx)
                 landmark_ends.append(current_idx + face_count)
@@ -786,7 +894,7 @@ class VideoPreprocessor:
 
             if self.include_hands:
                 hand_count = len(self.hand_landmarks)
-                included_parts.extend(['left_hand', 'right_hand'])
+                included_parts.extend(["left_hand", "right_hand"])
                 landmark_indices.extend(self.hand_landmarks)
                 landmark_starts.append(current_idx)
                 landmark_ends.append(current_idx + hand_count)
@@ -805,22 +913,27 @@ class VideoPreprocessor:
                 unified_graph=unified_data,
                 adjacency_matrix=unified_adj_matrix,
                 num_frames=np.array([num_frames]),
-                coordinate_system=np.array([coordinate_system], dtype='U20'),
+                coordinate_system=np.array([coordinate_system], dtype="U20"),
                 total_landmarks=np.array([total_landmarks]),
-                included_parts=np.array(included_parts, dtype='U20'),
+                included_parts=np.array(included_parts, dtype="U20"),
                 landmark_indices=np.array(landmark_indices),
                 landmark_starts=np.array(landmark_starts),
                 landmark_ends=np.array(landmark_ends),
-                landmark_counts=np.array(landmark_counts)
+                landmark_counts=np.array(landmark_counts),
             )
 
-        print(f"Dataset ({coordinate_system}) saved for {video_name} with {num_frames} frames")
+        print(
+            f"Dataset ({coordinate_system}) saved for {video_name} with {num_frames} frames"
+        )
 
-    def process_folder(self,
-                      input_folder: str,
-                      output_folder: str,
-                      video_extensions: List[str] = ['.mp4', '.avi', '.mov', '.mkv'],
-                      coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL]):
+    def process_folder(
+        self,
+        input_folder: str,
+        output_folder: str,
+        csv_path: str,
+        video_extensions: List[str] = [".mp4", ".avi", ".mov", ".mkv"],
+        coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL],
+    ):
         """
         Process all videos in a folder
 
@@ -829,10 +942,22 @@ class VideoPreprocessor:
             output_folder: Output folder for processed data
             video_extensions: List of video file extensions to process
             coordinate_systems: List of coordinate systems to save
+            csv_path: Optional path to CSV file with video-to-gloss mapping (columns: 'Video file', 'Gloss')
         """
         input_path = Path(input_folder)
         output_path = Path(output_folder)
         output_path.mkdir(parents=True, exist_ok=True)
+
+        # Load CSV mapping if provided
+        video_to_gloss = {}
+        try:
+            df = pd.read_csv(csv_path)
+            # Create mapping from video filename to gloss
+            video_to_gloss = dict(zip(df["Video file"], df["Gloss"]))
+            print(f"Loaded gloss mapping for {len(video_to_gloss)} videos from CSV")
+        except Exception as e:
+            print(f"Warning: Could not load CSV file {csv_path}: {e}")
+            raise Exception
 
         # Find all video files
         video_files = []
@@ -849,11 +974,17 @@ class VideoPreprocessor:
 
         # Process each video
         for i, video_path in enumerate(video_files):
-            print(f"\n--- Processing video {i+1}/{len(video_files)} ---")
+            print(f"\n--- Processing video {i + 1}/{len(video_files)} ---")
+
+            # Get gloss from CSV mapping if available
+            video_filename = video_path.name
+            gloss = video_to_gloss.get(video_filename, None)
+
             self.process_video(
                 str(video_path),
                 str(output_path),
-                coordinate_systems=coordinate_systems
+                gloss=gloss,
+                coordinate_systems=coordinate_systems,
             )
 
         print(f"\nAll videos processed! Output saved to: {output_folder}")
@@ -864,6 +995,7 @@ if __name__ == "__main__":
     # Configuration
     input_folder = "data/asl_videos"  # Change this to your input folder path
     output_folder = "data/asl_info"  # Change this to your output folder path
+    csv_path = "data/filtered_dataset.csv"  # Path to CSV with video-to-gloss mapping
 
     # Create preprocessor instance
     # Example 1: Include all body parts (default)
@@ -871,9 +1003,14 @@ if __name__ == "__main__":
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
         include_pose=True,
-        include_face=True,
-        include_hands=True
+        include_face=False,
+        include_hands=True,
     )
 
-    # Process all videos in the folder
-    preprocessor.process_folder(input_folder, output_folder, coordinate_systems=[CoordinateSystem.SHOULDER_CENTERED])
+    # Process all videos in the folder with CSV mapping
+    preprocessor.process_folder(
+        input_folder,
+        output_folder,
+        csv_path=csv_path,
+        coordinate_systems=[CoordinateSystem.SHOULDER_CENTERED],
+    )
