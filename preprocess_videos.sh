@@ -25,4 +25,4 @@ srun python -u preprocess_videos.py \
     --min_detection_confidence 0.5 \
     --min_tracking_confidence 0.5 \
     --coordinate_systems shoulder_centered \
-    --num_workers 30
+    --num_workers 20
