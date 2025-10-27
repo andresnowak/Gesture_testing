@@ -170,6 +170,7 @@ def main():
             video_extensions=args.video_extensions,
             coordinate_systems=coordinate_systems,
             gloss_mapping=gloss_mapping,
+            save_annotated_video=args.save_annotated_video
         )
         print("\n" + "=" * 80)
         print("Processing completed successfully!")

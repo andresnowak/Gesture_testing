@@ -918,6 +918,7 @@ class VideoPreprocessor:
         gloss_mapping: Dict[str, str],
         video_extensions: List[str] = [".mp4", ".avi", ".mov", ".mkv"],
         coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL],
+        save_annotated_video: bool = True,
     ):
         """
         Process all videos in a folder
@@ -928,6 +929,7 @@ class VideoPreprocessor:
             video_extensions: List of video file extensions to process
             coordinate_systems: List of coordinate systems to save
             gloss_mapping: Dictionary mapping video_id to gloss name
+            save_annotated_video: Whether to save annotated videos with landmarks drawn
         """
         input_path = Path(input_folder)
         output_path = Path(output_folder)
@@ -945,6 +947,7 @@ class VideoPreprocessor:
 
         print(f"Found {len(video_files)} video files")
         print(f"Coordinate systems to save: {[cs.value for cs in coordinate_systems]}")
+        print(f"Save annotated videos: {save_annotated_video}")
 
         # Process videos sequentially
         for idx, video_path in enumerate(video_files, 1):
@@ -953,33 +956,8 @@ class VideoPreprocessor:
                 str(video_path),
                 str(output_path),
                 gloss_mapping=gloss_mapping,
+                save_annotated_video=save_annotated_video,
                 coordinate_systems=coordinate_systems,
             )
 
         print(f"\nAll videos processed! Output saved to: {output_folder}")
-
-
-# Example usage
-if __name__ == "__main__":
-    # Configuration
-    input_folder = "data/asl_videos"  # Change this to your input folder path
-    output_folder = "data/asl_info"  # Change this to your output folder path
-    json_file = "data/WLASL_v0.3.json"
-
-    # Create preprocessor instance
-    # Example 1: Include all body parts (default)
-    preprocessor = VideoPreprocessor(
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-        include_pose=True,
-        include_face=True,
-        include_hands=True,
-    )
-
-    # Process all videos in the folder
-    preprocessor.process_folder(
-        input_folder,
-        output_folder,
-        json_file,
-        coordinate_systems=[CoordinateSystem.SHOULDER_CENTERED],
-    )
