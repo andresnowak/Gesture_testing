@@ -5,34 +5,8 @@ import mediapipe as mp
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from enum import Enum
-from multiprocessing import Pool, cpu_count
 
 # NOTE: We use the normalized landmarks (normalized based on height and width of the image)
-
-
-def _process_video_wrapper(args):
-    """
-    Wrapper function for parallel video processing.
-    Must be defined at module level to be picklable.
-
-    Args:
-        args: Tuple of (video_path, output_path, coordinate_systems, gloss_mapping, config)
-    """
-    video_path, output_path, coordinate_systems, gloss_mapping, config = args
-    # Each worker needs its own VideoPreprocessor instance
-    preprocessor = VideoPreprocessor(
-        min_detection_confidence=config['min_detection_confidence'],
-        min_tracking_confidence=config['min_tracking_confidence'],
-        include_pose=config['include_pose'],
-        include_face=config['include_face'],
-        include_hands=config['include_hands'],
-    )
-    return preprocessor.process_video(
-        str(video_path),
-        str(output_path),
-        gloss_mapping=gloss_mapping,
-        coordinate_systems=coordinate_systems,
-    )
 
 
 class CoordinateSystem(Enum):
@@ -944,7 +918,6 @@ class VideoPreprocessor:
         gloss_mapping: Dict[str, str],
         video_extensions: List[str] = [".mp4", ".avi", ".mov", ".mkv"],
         coordinate_systems: List[CoordinateSystem] = [CoordinateSystem.ORIGINAL],
-        num_workers: int = 1,
     ):
         """
         Process all videos in a folder
@@ -955,7 +928,6 @@ class VideoPreprocessor:
             video_extensions: List of video file extensions to process
             coordinate_systems: List of coordinate systems to save
             gloss_mapping: Dictionary mapping video_id to gloss name
-            num_workers: Number of parallel workers (1 = sequential, -1 = all CPUs)
         """
         input_path = Path(input_folder)
         output_path = Path(output_folder)
@@ -974,30 +946,15 @@ class VideoPreprocessor:
         print(f"Found {len(video_files)} video files")
         print(f"Coordinate systems to save: {[cs.value for cs in coordinate_systems]}")
 
-        # Determine number of workers
-        if num_workers == -1:
-            num_workers = cpu_count()
-
-        print(f"Using {num_workers} worker(s) for parallel processing")
-
-        # Configuration for workers
-        config = {
-            'min_detection_confidence': self.min_detection_confidence,
-            'min_tracking_confidence': self.min_tracking_confidence,
-            'include_pose': self.include_pose,
-            'include_face': self.include_face,
-            'include_hands': self.include_hands,
-        }
-
-        # Prepare arguments for parallel processing
-        args_list = [
-            (video_path, output_path, coordinate_systems, gloss_mapping, config)
-            for video_path in video_files
-        ]
-
-        # Process videos in parallel
-        with Pool(processes=num_workers) as pool:
-            pool.map(_process_video_wrapper, args_list)
+        # Process videos sequentially
+        for idx, video_path in enumerate(video_files, 1):
+            print(f"\n[{idx}/{len(video_files)}] Processing: {video_path.name}")
+            self.process_video(
+                str(video_path),
+                str(output_path),
+                gloss_mapping=gloss_mapping,
+                coordinate_systems=coordinate_systems,
+            )
 
         print(f"\nAll videos processed! Output saved to: {output_folder}")
 

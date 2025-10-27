@@ -119,14 +119,6 @@ def parse_args():
         help="Path to dataset JSON file to map video IDs to gloss names (e.g., data/WLASL_v0.3.json)",
     )
 
-    # Parallel processing
-    parser.add_argument(
-        "--num_workers",
-        type=int,
-        default=1,
-        help="Number of parallel workers for processing videos (default: 1, use -1 for all CPUs)",
-    )
-
     return parser.parse_args()
 
 
@@ -178,7 +170,6 @@ def main():
             video_extensions=args.video_extensions,
             coordinate_systems=coordinate_systems,
             gloss_mapping=gloss_mapping,
-            num_workers=args.num_workers,
         )
         print("\n" + "=" * 80)
         print("Processing completed successfully!")

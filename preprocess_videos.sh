@@ -4,7 +4,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --time=14:00:00
+#SBATCH --cpus-per-task=40
+#SBATCH --time=20:00:00
 #SBATCH --output=logs/slurm-%j.out
 #SBATCH --error=logs/slurm-%j.err
 
@@ -25,4 +26,3 @@ srun python -u preprocess_videos.py \
     --min_detection_confidence 0.5 \
     --min_tracking_confidence 0.5 \
     --coordinate_systems shoulder_centered \
-    --num_workers 20
